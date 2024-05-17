@@ -7,7 +7,7 @@ import * as bcrypt from 'bcrypt';
 export class UserService {
     constructor(private readonly prismaService: PrismaService) {}
 
-    save(user: Partial<User>) {
+    async save(user: Partial<User>) {
         const hashedPassword = this.hashPassword(user.password);
         return this.prismaService.user.create({
             data: {
