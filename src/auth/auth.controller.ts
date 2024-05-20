@@ -4,7 +4,6 @@ import {
     Controller,
     Get,
     HttpStatus,
-    NotFoundException,
     Post,
     Res,
     UnauthorizedException,
@@ -14,6 +13,7 @@ import { AuthService } from '@auth/auth.service';
 import { Tokens } from '@auth/interfaces';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { Cookie, UserAgent } from '@common/decorators';
 
 const REFRESH_TOKEN = 'refreshtoken';
 
@@ -32,20 +32,28 @@ export class AuthController {
     }
 
     @Post('login')
-    async login(@Body() dto: LoginDto, @Res() res: Response) {
-        const tokens = await this.authService.login(dto);
+    async login(@Body() dto: LoginDto, @Res() res: Response, @UserAgent() agent: string) {
+        const tokens = await this.authService.login(dto, agent);
+        if (!tokens) {
+            throw new BadRequestException(`Ошибка входа ${JSON.stringify(dto)}`);
+        }
+        this.setRefreshTokenToCookies(tokens, res);
+    }
+
+    @Get('refresh-tokens')
+    async refreshTokens(@Cookie(REFRESH_TOKEN) refreshToken: string, @Res() res: Response, @UserAgent() agent: string) {
+        if (!refreshToken) {
+            throw new UnauthorizedException();
+        }
+
+        const tokens = await this.authService.refreshTokens(refreshToken, agent);
 
         if (!tokens) {
-            throw new NotFoundException(`Ошибка входа входа ${JSON.stringify(dto)}`);
+            throw new UnauthorizedException();
         }
 
         this.setRefreshTokenToCookies(tokens, res);
-
-        // return { accessToken: tokens.accessToken };
     }
-
-    @Get('refresh')
-    refreshTokens() {}
 
     private setRefreshTokenToCookies(tokens: Tokens, res: Response) {
         if (!tokens) {
@@ -60,6 +68,6 @@ export class AuthController {
             path: '/',
         });
 
-        res.status(HttpStatus.CREATED).json(tokens);
+        res.status(HttpStatus.CREATED).json({ accessToken: tokens.accessToken });
     }
 }

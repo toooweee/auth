@@ -37,7 +37,7 @@ export class AuthService {
         }
     }
 
-    async login(dto: LoginDto): Promise<Tokens> {
+    async login(dto: LoginDto, agent: string): Promise<Tokens> {
         const user: User = await this.userService.finOne(dto.email).catch((err) => {
             this.logger.error('Error finding user during login:', err);
             return null;
@@ -47,6 +47,47 @@ export class AuthService {
             throw new UnauthorizedException('Неверный логин или пароль');
         }
 
+        return this.generateTokens(user, agent);
+    }
+
+    async getRefreshToken(userId: string, agent: string): Promise<Token> {
+        const _token = await this.prismaService.token.findFirst({
+            where: { userId, userAgent: agent },
+        });
+        const token = _token?.token ?? '';
+        return this.prismaService.token.upsert({
+            where: { token },
+            update: { token: v4(), exp: add(new Date(), { months: 1 }) },
+            create: {
+                token: v4(),
+                exp: add(new Date(), { months: 1 }),
+                userId,
+                userAgent: agent,
+            },
+        });
+    }
+
+    async refreshTokens(refreshToken: string, agent: string): Promise<Tokens> {
+        const token = await this.prismaService.token.delete({
+            where: { token: refreshToken },
+        });
+
+        if (!token) {
+            throw new UnauthorizedException();
+        }
+
+        await this.prismaService.token.delete({ where: { token: refreshToken } });
+
+        if (new Date(token.exp) < new Date()) {
+            throw new UnauthorizedException();
+        }
+
+        const user = await this.userService.finOne(token.userId);
+
+        return this.generateTokens(user, agent);
+    }
+
+    private async generateTokens(user: User, agent: string): Promise<Tokens> {
         const accessToken =
             'Bearer ' +
             this.jwtService.sign({
@@ -55,18 +96,8 @@ export class AuthService {
                 roles: user.roles,
             });
 
-        const refreshToken = await this.getRefreshToken(user.id);
+        const refreshToken = await this.getRefreshToken(user.id, agent);
 
         return { accessToken, refreshToken };
-    }
-
-    async getRefreshToken(userId: string): Promise<Token> {
-        return this.prismaService.token.create({
-            data: {
-                token: v4(),
-                exp: add(new Date(), { months: 1 }),
-                userId,
-            },
-        });
     }
 }
