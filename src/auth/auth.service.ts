@@ -100,4 +100,8 @@ export class AuthService {
 
         return { accessToken, refreshToken };
     }
+
+    deleteRefreshToken(token: string) {
+        return this.prismaService.token.delete({ where: { token } });
+    }
 }

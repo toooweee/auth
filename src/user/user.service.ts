@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@prisma/prisma.service';
 import { Role, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -14,7 +14,7 @@ export class UserService {
             data: {
                 email: user.email,
                 password: hashedPassword,
-                roles: ['USER'],
+                roles: user.roles ?? ['USER'], // Установка роли по умолчанию
             },
         });
     }
@@ -31,9 +31,15 @@ export class UserService {
         });
     }
 
-    delete(id: string, user: JwtPayload) {
+    async delete(id: string, user: JwtPayload) {
+        const userToDelete = await this.prismaService.user.findUnique({ where: { id } });
+
+        if (!userToDelete) {
+            throw new NotFoundException('User not found');
+        }
+
         if (user.id !== id && !user.roles.includes(Role.ADMIN)) {
-            throw new ForbiddenException();
+            throw new ForbiddenException('You are not allowed to delete this user');
         }
 
         return this.prismaService.user.delete({
